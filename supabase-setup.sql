@@ -12,8 +12,14 @@ create table if not exists fd_receitas (
   produto text default '',
   valor numeric(12,2) not null default 0,
   unidades integer not null default 1,
-  obs text default ''
+  obs text default '',
+  taxa_perc numeric(6,4) default null,  -- % personalizada por lançamento (null = usa padrão da plataforma)
+  taxa_fixa numeric(10,2) default null  -- R$ fixo/venda personalizado (null = usa padrão da plataforma)
 );
+
+-- Migração: adiciona colunas de taxa em banco já existente (seguro rodar mesmo se já existir)
+alter table fd_receitas add column if not exists taxa_perc numeric(6,4) default null;
+alter table fd_receitas add column if not exists taxa_fixa numeric(10,2) default null;
 
 -- Investimentos em anúncios
 create table if not exists fd_anuncios (

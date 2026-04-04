@@ -30,8 +30,8 @@ const sbDelete = async (table, id, col="id") => {
 };
 
 // ─── CONVERSORES DB ↔ FRONTEND ────────────────────────────────────────────────
-const recFromDB  = r => ({id:r.id, mes:r.mes, plataforma:r.plataforma, produto:r.produto||"", valor:Number(r.valor), unidades:r.unidades, obs:r.obs||""});
-const recToDB    = d => ({id:d.id, mes:d.mes, plataforma:d.plataforma, produto:d.produto||"", valor:d.valor, unidades:d.unidades, obs:d.obs||""});
+const recFromDB  = r => ({id:r.id, mes:r.mes, plataforma:r.plataforma, produto:r.produto||"", valor:Number(r.valor), unidades:r.unidades, obs:r.obs||"", taxaPerc:r.taxa_perc??null, taxaFixa:r.taxa_fixa??null});
+const recToDB    = d => ({id:d.id, mes:d.mes, plataforma:d.plataforma, produto:d.produto||"", valor:d.valor, unidades:d.unidades, obs:d.obs||"", taxa_perc:d.taxaPerc??null, taxa_fixa:d.taxaFixa??null});
 const adFromDB   = r => ({id:r.id, mes:r.mes, plataforma:r.plataforma, campanha:r.campanha, investimento:Number(r.investimento), obs:r.obs||""});
 const adToDB     = d => ({id:d.id, mes:d.mes, plataforma:d.plataforma, campanha:d.campanha, investimento:d.investimento, obs:d.obs||""});
 const despFromDB = r => ({id:r.id, mes:r.mes, cat:r.cat, desc:r.descricao, valor:Number(r.valor), recorrente:r.recorrente, obs:r.obs||""});
@@ -58,16 +58,26 @@ const C = {
 };
 
 // ─── PLATAFORMAS DE VENDA ─────────────────────────────────────────────────────
+// taxaPerc = % sobre o valor bruto  |  taxaFixa = R$ fixo por venda
 const PLATS_REC = [
-  {id:"hotmart",   label:"Hotmart",    icon:"🔥", cor:C.orange, taxa:9.9 },
-  {id:"eduzz",     label:"Eduzz",      icon:"⚡", cor:C.yellow, taxa:4.99},
-  {id:"monetizze", label:"Monetizze",  icon:"💎", cor:C.blue,   taxa:9.9 },
-  {id:"kiwify",    label:"Kiwify",     icon:"🥝", cor:C.green,  taxa:9.99},
-  {id:"braip",     label:"Braip",      icon:"🎯", cor:C.red,    taxa:9.9 },
-  {id:"lastlink",  label:"Lastlink",   icon:"🔗", cor:C.teal,   taxa:4.9 },
-  {id:"stripe",    label:"Stripe",     icon:"💳", cor:C.purple, taxa:2.9 },
-  {id:"outros",    label:"Outros",     icon:"💼", cor:C.muted,  taxa:0   },
+  {id:"hotmart",   label:"Hotmart",    icon:"🔥", cor:C.orange, taxaPerc:9.9,  taxaFixa:0   },
+  {id:"payt",      label:"Payt",       icon:"💜", cor:C.purple, taxaPerc:4.99, taxaFixa:0   },
+  {id:"eduzz",     label:"Eduzz",      icon:"⚡", cor:C.yellow, taxaPerc:4.99, taxaFixa:0   },
+  {id:"monetizze", label:"Monetizze",  icon:"💎", cor:C.blue,   taxaPerc:9.9,  taxaFixa:0   },
+  {id:"kiwify",    label:"Kiwify",     icon:"🥝", cor:C.green,  taxaPerc:9.99, taxaFixa:0   },
+  {id:"braip",     label:"Braip",      icon:"🎯", cor:C.red,    taxaPerc:9.9,  taxaFixa:0   },
+  {id:"lastlink",  label:"Lastlink",   icon:"🔗", cor:C.teal,   taxaPerc:4.9,  taxaFixa:0   },
+  {id:"stripe",    label:"Stripe",     icon:"💳", cor:C.purple, taxaPerc:2.9,  taxaFixa:1.5 },
+  {id:"outros",    label:"Outros",     icon:"💼", cor:C.muted,  taxaPerc:0,    taxaFixa:0   },
 ];
+
+// Calcula o valor total de taxa de uma receita
+// Usa taxaPerc/taxaFixa do lançamento se informados, senão usa o padrão da plataforma
+function calcTaxa(valor, unidades, plat, taxaPercOver, taxaFixaOver) {
+  const perc  = taxaPercOver != null ? Number(taxaPercOver) : plat.taxaPerc;
+  const fixa  = taxaFixaOver != null ? Number(taxaFixaOver) : plat.taxaFixa;
+  return valor * (perc / 100) + fixa * (unidades || 1);
+}
 
 // ─── PLATAFORMAS DE ANÚNCIOS ──────────────────────────────────────────────────
 const PLATS_ADS = [
@@ -396,7 +406,7 @@ function calcMes(receitas, anuncios, despesas, mes) {
   const aMes = anuncios.filter(a=>a.mes===mes);
   const dMes = despesas.filter(d=>d.mes===mes);
   const recBruta   = rMes.reduce((s,r)=>s+r.valor,0);
-  const taxasPlat  = rMes.reduce((s,r)=>s+(r.valor*(getPR(r.plataforma).taxa/100)),0);
+  const taxasPlat  = rMes.reduce((s,r)=>s+calcTaxa(r.valor,r.unidades,getPR(r.plataforma),r.taxaPerc,r.taxaFixa),0);
   const recLiq     = recBruta-taxasPlat;
   const totalAds   = aMes.reduce((s,a)=>s+a.investimento,0);
   const totalDesp  = dMes.reduce((s,d)=>s+d.valor,0);
@@ -558,19 +568,35 @@ function TabDashboard({receitas,anuncios,despesas,produtos,fechamentos,mesSel}) 
 
 // ─── TAB RECEITAS ─────────────────────────────────────────────────────────────
 function ModalReceita({initial,produtos,mes,onSave,onClose}) {
-  const blank = {mes,plataforma:"hotmart",produto:"",valor:"",unidades:"1",obs:""};
-  const [f,setF] = useState({...blank,...(initial||{})});
+  const blank = {mes,plataforma:"hotmart",produto:"",valor:"",unidades:"1",obs:"",taxaPerc:"",taxaFixa:""};
+  const [f,setF]         = useState({...blank,...(initial||{})});
+  const [taxaCustom,setTaxaCustom] = useState(!!(initial?.taxaPerc!=null&&initial?.taxaPerc!==""||initial?.taxaFixa!=null&&initial?.taxaFixa!==""));
   const s = k => v => setF(p=>({...p,[k]:v}));
-  const plat = getPR(f.plataforma);
-  const taxa = parseFloat(f.valor||0)*plat.taxa/100;
+  const plat  = getPR(f.plataforma);
+  const valor = parseFloat(f.valor||0);
+  const units = parseInt(f.unidades)||1;
+  const taxaPercEfet = taxaCustom && f.taxaPerc!=="" ? parseFloat(f.taxaPerc) : plat.taxaPerc;
+  const taxaFixaEfet = taxaCustom && f.taxaFixa!=="" ? parseFloat(f.taxaFixa) : plat.taxaFixa;
+  const taxa  = calcTaxa(valor, units, plat, taxaCustom&&f.taxaPerc!==""?f.taxaPerc:null, taxaCustom&&f.taxaFixa!==""?f.taxaFixa:null);
+
+  function salvar() {
+    const data = {
+      ...f,
+      valor: valor,
+      unidades: units,
+      taxaPerc: taxaCustom && f.taxaPerc!=="" ? parseFloat(f.taxaPerc) : null,
+      taxaFixa: taxaCustom && f.taxaFixa!=="" ? parseFloat(f.taxaFixa) : null,
+    };
+    onSave(data);
+  }
+
   return (
-    <Modal title={initial?.id?"Editar Receita":"Nova Receita"} sub="LANÇAMENTO DE RECEITA" onClose={onClose}
-           onSave={()=>onSave({...f,valor:parseFloat(f.valor)||0,unidades:parseInt(f.unidades)||1})}>
+    <Modal title={initial?.id?"Editar Receita":"Nova Receita"} sub="LANÇAMENTO DE RECEITA" onClose={onClose} onSave={salvar}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <div>
           <Lbl>PLATAFORMA *</Lbl>
-          <FSel value={f.plataforma} onChange={e=>s("plataforma")(e.target.value)}>
-            {PLATS_REC.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label} ({p.taxa}%)</option>)}
+          <FSel value={f.plataforma} onChange={e=>{s("plataforma")(e.target.value);setTaxaCustom(false);}}>
+            {PLATS_REC.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label} ({p.taxaPerc}%{p.taxaFixa>0?` + R$${p.taxaFixa}/venda`:""})</option>)}
           </FSel>
         </div>
         <div>
@@ -585,12 +611,42 @@ function ModalReceita({initial,produtos,mes,onSave,onClose}) {
         <div><Lbl>VALOR BRUTO (R$) *</Lbl><FInp type="number" min="0" step="0.01" value={f.valor} onChange={e=>s("valor")(e.target.value)}/></div>
         <div><Lbl>UNIDADES VENDIDAS</Lbl><FInp type="number" min="1" value={f.unidades} onChange={e=>s("unidades")(e.target.value)}/></div>
       </div>
-      {parseFloat(f.valor)>0 && (
+
+      {/* Taxas customizadas */}
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:3,padding:"10px 14px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom: taxaCustom?10:0}}>
+          <input type="checkbox" id="taxaCustom" checked={taxaCustom} onChange={e=>setTaxaCustom(e.target.checked)}
+            style={{accentColor:C.accent,cursor:"pointer"}}/>
+          <label htmlFor="taxaCustom" style={{fontSize:11,color:C.muted,cursor:"pointer",letterSpacing:1}}>
+            PERSONALIZAR TAXAS (padrão: {plat.taxaPerc}%{plat.taxaFixa>0?` + R$${plat.taxaFixa}/venda`:""})
+          </label>
+        </div>
+        {taxaCustom && (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div>
+              <Lbl>TAXA % (ex: 9.9)</Lbl>
+              <FInp type="number" min="0" step="0.01" max="100" placeholder={String(plat.taxaPerc)}
+                value={f.taxaPerc} onChange={e=>s("taxaPerc")(e.target.value)}/>
+            </div>
+            <div>
+              <Lbl>TAXA FIXA R$/VENDA (ex: 1.50)</Lbl>
+              <FInp type="number" min="0" step="0.01" placeholder={String(plat.taxaFixa)}
+                value={f.taxaFixa} onChange={e=>s("taxaFixa")(e.target.value)}/>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {valor>0 && (
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:3,padding:"10px 14px",
                      display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12}}>
-          <div><div style={{fontSize:10,color:C.muted,marginBottom:2}}>TAXA {plat.taxa}%</div><div style={{color:C.red,fontWeight:700}}>- {fmtR(taxa)}</div></div>
-          <div><div style={{fontSize:10,color:C.muted,marginBottom:2}}>RECEITA LÍQUIDA</div><div style={{color:C.green,fontWeight:700}}>{fmtR(parseFloat(f.valor)-taxa)}</div></div>
-          <div><div style={{fontSize:10,color:C.muted,marginBottom:2}}>TICKET MÉDIO</div><div style={{fontWeight:700}}>{fmtR(parseInt(f.unidades)>0?parseFloat(f.valor)/parseInt(f.unidades):0)}</div></div>
+          <div>
+            <div style={{fontSize:10,color:C.muted,marginBottom:2}}>TAXA TOTAL</div>
+            <div style={{color:C.red,fontWeight:700}}>- {fmtR(taxa)}</div>
+            <div style={{fontSize:10,color:C.muted}}>{taxaPercEfet}%{taxaFixaEfet>0?` + R$${taxaFixaEfet}×${units}`:""}</div>
+          </div>
+          <div><div style={{fontSize:10,color:C.muted,marginBottom:2}}>RECEITA LÍQUIDA</div><div style={{color:C.green,fontWeight:700}}>{fmtR(valor-taxa)}</div></div>
+          <div><div style={{fontSize:10,color:C.muted,marginBottom:2}}>TICKET MÉDIO</div><div style={{fontWeight:700}}>{fmtR(units>0?valor/units:0)}</div></div>
         </div>
       )}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -615,7 +671,7 @@ function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast}) {
     PLATS_REC.map(p=>{
       const items = receitas.filter(r=>r.mes===mesSel&&r.plataforma===p.id);
       const bruto = items.reduce((s,r)=>s+r.valor,0);
-      const taxa  = bruto*p.taxa/100;
+      const taxa  = items.reduce((s,r)=>s+calcTaxa(r.valor,r.unidades,p,r.taxaPerc,r.taxaFixa),0);
       const unids = items.reduce((s,r)=>s+r.unidades,0);
       return {...p,bruto,taxa,liquido:bruto-taxa,unids,count:items.length};
     }).filter(p=>p.bruto>0)
@@ -649,7 +705,7 @@ function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast}) {
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
                 <div>
                   <div style={{fontSize:12,fontWeight:700}}>{p.icon} {p.label}</div>
-                  <div style={{fontSize:10,color:C.muted,marginTop:1}}>taxa {p.taxa}% · {p.unids} vendas</div>
+                  <div style={{fontSize:10,color:C.muted,marginTop:1}}>taxa {p.taxaPerc}%{p.taxaFixa>0?` + R$${p.taxaFixa}/vd`:""} · {p.unids} vendas</div>
                 </div>
                 <span style={{fontSize:10,background:C.greenBg,color:C.green,padding:"1px 5px",borderRadius:2}}>
                   {totalBruto>0?`${((p.bruto/totalBruto)*100).toFixed(0)}%`:"—"}
@@ -680,7 +736,7 @@ function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast}) {
         {itens.length===0 && <div style={{padding:28,textAlign:"center",color:C.muted}}>Nenhuma receita em {mesLbl(mesSel)}.</div>}
         {itens.map((r,i)=>{
           const p   = getPR(r.plataforma);
-          const taxa= r.valor*p.taxa/100;
+          const taxa= calcTaxa(r.valor,r.unidades,p,r.taxaPerc,r.taxaFixa);
           const prod= produtos.find(pr=>pr.id===r.produto);
           return (
             <div key={r.id}
