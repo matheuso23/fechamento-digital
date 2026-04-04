@@ -103,6 +103,8 @@ const CATS_DESP = [
   {id:"facebook_ads",label:"Facebook Ads",       icon:"📘", cor:"#1877f2"},
   {id:"afiliados", label:"Afiliados / Comissões",icon:"🤝", cor:C.accent},
   {id:"equipe",    label:"Equipe / Freelancers", icon:"👷", cor:"#94a3b8"},
+  {id:"ias",       label:"Inteligência Artificial",icon:"🤖", cor:C.accent},
+  {id:"cursos",    label:"Cursos / Conhecimento", icon:"📚", cor:C.teal  },
   {id:"taxas",     label:"Taxas e Tarifas",      icon:"🏦", cor:C.yellow},
   {id:"contabil",  label:"Contabilidade / Jur.", icon:"⚖️", cor:C.muted },
   {id:"outros_d",  label:"Outros",               icon:"🔧", cor:C.faint },
