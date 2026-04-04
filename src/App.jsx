@@ -1374,18 +1374,7 @@ export default function App() {
     setTimeout(() => setToast(null), 2800);
   }
 
-  // ── Telas de carregamento / setup ─────────────────────────────────────────
-  if (!SB_ON) {
-    // Mostra setup apenas se não carregou ainda (primeiro render)
-    if (!loaded) return <TelaSetup/>;
-  } else {
-    if (!loaded) return <TelaCarregando erro={dbError}/>;
-    if (dbError)  return <TelaCarregando erro={dbError}/>;
-  }
-
-  const c      = calcMes(receitas, anuncios, despesas, mesSel);
-  const fechado= fechamentos[mesSel]?.status === "fechado";
-
+  // ── Hooks devem ser chamados antes de qualquer return condicional ──────────
   const mesesDisp = useMemo(() => {
     const todos = new Set([
       mesAtu(),
@@ -1395,6 +1384,17 @@ export default function App() {
     ]);
     return [...todos].sort().reverse().slice(0, 18);
   }, [receitas, anuncios, despesas]);
+
+  // ── Telas de carregamento / setup ─────────────────────────────────────────
+  if (!SB_ON) {
+    if (!loaded) return <TelaSetup/>;
+  } else {
+    if (!loaded) return <TelaCarregando erro={dbError}/>;
+    if (dbError)  return <TelaCarregando erro={dbError}/>;
+  }
+
+  const c      = calcMes(receitas, anuncios, despesas, mesSel);
+  const fechado= fechamentos[mesSel]?.status === "fechado";
 
   const TABS = [
     {id:"dashboard", label:"📊 Dashboard"},
