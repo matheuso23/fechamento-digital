@@ -61,6 +61,7 @@ const C = {
 // taxaPerc = % sobre o valor bruto  |  taxaFixa = R$ fixo por venda
 const PLATS_REC = [
   {id:"hotmart",   label:"Hotmart",    icon:"🔥", cor:C.orange, taxaPerc:9.9,  taxaFixa:0   },
+  {id:"cakto",     label:"Cakto",      icon:"🎂", cor:C.pink,   taxaPerc:4.99, taxaFixa:0   },
   {id:"payt",      label:"Payt",       icon:"💜", cor:C.purple, taxaPerc:4.99, taxaFixa:0   },
   {id:"eduzz",     label:"Eduzz",      icon:"⚡", cor:C.yellow, taxaPerc:4.99, taxaFixa:0   },
   {id:"monetizze", label:"Monetizze",  icon:"💎", cor:C.blue,   taxaPerc:9.9,  taxaFixa:0   },
