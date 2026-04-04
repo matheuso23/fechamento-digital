@@ -30,12 +30,12 @@ const sbDelete = async (table, id, col="id") => {
 };
 
 // ─── CONVERSORES DB ↔ FRONTEND ────────────────────────────────────────────────
-const recFromDB  = r => ({id:r.id, mes:r.mes, plataforma:r.plataforma, produto:r.produto||"", valor:Number(r.valor), unidades:r.unidades, obs:r.obs||"", taxaPerc:r.taxa_perc??null, taxaFixa:r.taxa_fixa??null});
-const recToDB    = d => ({id:d.id, mes:d.mes, plataforma:d.plataforma, produto:d.produto||"", valor:d.valor, unidades:d.unidades, obs:d.obs||"", taxa_perc:d.taxaPerc??null, taxa_fixa:d.taxaFixa??null});
-const adFromDB   = r => ({id:r.id, mes:r.mes, plataforma:r.plataforma, campanha:r.campanha, investimento:Number(r.investimento), obs:r.obs||""});
-const adToDB     = d => ({id:d.id, mes:d.mes, plataforma:d.plataforma, campanha:d.campanha, investimento:d.investimento, obs:d.obs||""});
-const despFromDB = r => ({id:r.id, mes:r.mes, cat:r.cat, desc:r.descricao, valor:Number(r.valor), recorrente:r.recorrente, obs:r.obs||""});
-const despToDB   = d => ({id:d.id, mes:d.mes, cat:d.cat, descricao:d.desc, valor:d.valor, recorrente:d.recorrente, obs:d.obs||""});
+const recFromDB  = r => ({id:r.id, mes:r.mes, plataforma:r.plataforma, produto:r.produto||"", valor:Number(r.valor), unidades:r.unidades, obs:r.obs||"", taxaPerc:r.taxa_perc??null, taxaFixa:r.taxa_fixa??null, conta:r.conta||"principal"});
+const recToDB    = d => ({id:d.id, mes:d.mes, plataforma:d.plataforma, produto:d.produto||"", valor:d.valor, unidades:d.unidades, obs:d.obs||"", taxa_perc:d.taxaPerc??null, taxa_fixa:d.taxaFixa??null, conta:d.conta||"principal"});
+const adFromDB   = r => ({id:r.id, mes:r.mes, plataforma:r.plataforma, campanha:r.campanha, investimento:Number(r.investimento), obs:r.obs||"", conta:r.conta||"principal"});
+const adToDB     = d => ({id:d.id, mes:d.mes, plataforma:d.plataforma, campanha:d.campanha, investimento:d.investimento, obs:d.obs||"", conta:d.conta||"principal"});
+const despFromDB = r => ({id:r.id, mes:r.mes, cat:r.cat, desc:r.descricao, valor:Number(r.valor), recorrente:r.recorrente, obs:r.obs||"", conta:r.conta||"principal"});
+const despToDB   = d => ({id:d.id, mes:d.mes, cat:d.cat, descricao:d.desc, valor:d.valor, recorrente:d.recorrente, obs:d.obs||"", conta:d.conta||"principal"});
 const prodFromDB = r => ({id:r.id, nome:r.nome, tipo:r.tipo, preco:Number(r.preco), ativo:r.ativo});
 const prodToDB   = d => ({id:d.id, nome:d.nome, tipo:d.tipo, preco:d.preco, ativo:d.ativo});
 const fechsFromDB= rows => rows.reduce((acc,r) => ({...acc,[r.mes]:{status:r.status, obs:r.obs||"", dataFechamento:r.data_fechamento||null}}), {});
@@ -406,10 +406,10 @@ function TelaSetup() {
 }
 
 // ─── CÁLCULOS DO MÊS ─────────────────────────────────────────────────────────
-function calcMes(receitas, anuncios, despesas, mes) {
-  const rMes = receitas.filter(r=>r.mes===mes);
-  const aMes = anuncios.filter(a=>a.mes===mes);
-  const dMes = despesas.filter(d=>d.mes===mes);
+function calcMes(receitas, anuncios, despesas, mes, conta=null) {
+  const rMes = receitas.filter(r=>r.mes===mes&&(conta==null||r.conta===conta));
+  const aMes = anuncios.filter(a=>a.mes===mes&&(conta==null||a.conta===conta));
+  const dMes = despesas.filter(d=>d.mes===mes&&(conta==null||d.conta===conta));
   const recBruta   = rMes.reduce((s,r)=>s+r.valor,0);
   const taxasPlat  = rMes.reduce((s,r)=>s+calcTaxa(r.valor,r.unidades,getPR(r.plataforma),r.taxaPerc,r.taxaFixa),0);
   const recLiq     = recBruta-taxasPlat;
@@ -662,19 +662,19 @@ function ModalReceita({initial,produtos,mes,onSave,onClose}) {
   );
 }
 
-function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast}) {
+function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast,conta="principal"}) {
   const [form,    setForm]    = useState(null);
   const [del,     setDel]     = useState(null);
   const [filtPlat,setFiltPlat]= useState("todos");
 
   const itens = useMemo(()=>
-    receitas.filter(r=>r.mes===mesSel&&(filtPlat==="todos"||r.plataforma===filtPlat))
+    receitas.filter(r=>r.mes===mesSel&&r.conta===conta&&(filtPlat==="todos"||r.plataforma===filtPlat))
       .sort((a,b)=>getPR(a.plataforma).label.localeCompare(getPR(b.plataforma).label))
-  ,[receitas,mesSel,filtPlat]);
+  ,[receitas,mesSel,filtPlat,conta]);
 
   const porPlat = useMemo(()=>
     PLATS_REC.map(p=>{
-      const items = receitas.filter(r=>r.mes===mesSel&&r.plataforma===p.id);
+      const items = receitas.filter(r=>r.mes===mesSel&&r.conta===conta&&r.plataforma===p.id);
       const bruto = items.reduce((s,r)=>s+r.valor,0);
       const taxa  = items.reduce((s,r)=>s+calcTaxa(r.valor,r.unidades,p,r.taxaPerc,r.taxaFixa),0);
       const unids = items.reduce((s,r)=>s+r.unidades,0);
@@ -689,8 +689,8 @@ function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast}) {
 
   function salvar(data) {
     if (!data.valor) return;
-    if (form?.id){setReceitas(rs=>rs.map(r=>r.id===form.id?{...data,id:form.id}:r));showToast("Atualizado!");}
-    else{setReceitas(rs=>[...rs,{...data,id:uid()}]);showToast("Receita lançada!");}
+    if (form?.id){setReceitas(rs=>rs.map(r=>r.id===form.id?{...data,id:form.id,conta}:r));showToast("Atualizado!");}
+    else{setReceitas(rs=>[...rs,{...data,id:uid(),conta}]);showToast("Receita lançada!");}
     setForm(null);
   }
 
@@ -807,34 +807,34 @@ function ModalAnuncio({initial,mes,onSave,onClose}) {
   );
 }
 
-function TabAnuncios({anuncios,setAnuncios,receitas,mesSel,showToast}) {
+function TabAnuncios({anuncios,setAnuncios,receitas,mesSel,showToast,conta="principal"}) {
   const [form,    setForm]    = useState(null);
   const [del,     setDel]     = useState(null);
   const [filtPlat,setFiltPlat]= useState("todos");
 
   const itens = useMemo(()=>
-    anuncios.filter(a=>a.mes===mesSel&&(filtPlat==="todos"||a.plataforma===filtPlat))
+    anuncios.filter(a=>a.mes===mesSel&&a.conta===conta&&(filtPlat==="todos"||a.plataforma===filtPlat))
       .sort((a,b)=>b.investimento-a.investimento)
-  ,[anuncios,mesSel,filtPlat]);
+  ,[anuncios,mesSel,filtPlat,conta]);
 
   const porPlat = useMemo(()=>
     PLATS_ADS.map(p=>{
-      const items = anuncios.filter(a=>a.mes===mesSel&&a.plataforma===p.id);
+      const items = anuncios.filter(a=>a.mes===mesSel&&a.conta===conta&&a.plataforma===p.id);
       const inv   = items.reduce((s,a)=>s+a.investimento,0);
       return {...p,investimento:inv,count:items.length};
     }).filter(p=>p.investimento>0)
-  ,[anuncios,mesSel]);
+  ,[anuncios,mesSel,conta]);
 
   const totalInv    = porPlat.reduce((s,p)=>s+p.investimento,0);
-  const recBruta    = receitas.filter(r=>r.mes===mesSel).reduce((s,r)=>s+r.valor,0);
+  const recBruta    = receitas.filter(r=>r.mes===mesSel&&r.conta===conta).reduce((s,r)=>s+r.valor,0);
   const roas        = totalInv>0 ? recBruta/totalInv : 0;
-  const totalVendas = receitas.filter(r=>r.mes===mesSel).reduce((s,r)=>s+r.unidades,0);
+  const totalVendas = receitas.filter(r=>r.mes===mesSel&&r.conta===conta).reduce((s,r)=>s+r.unidades,0);
   const cpa         = totalVendas>0&&totalInv>0 ? totalInv/totalVendas : 0;
 
   function salvar(data) {
     if (!data.investimento||!data.campanha) return;
-    if (form?.id){setAnuncios(as=>as.map(a=>a.id===form.id?{...data,id:form.id}:a));showToast("Atualizado!");}
-    else{setAnuncios(as=>[...as,{...data,id:uid()}]);showToast("Anúncio lançado!");}
+    if (form?.id){setAnuncios(as=>as.map(a=>a.id===form.id?{...data,id:form.id,conta}:a));showToast("Atualizado!");}
+    else{setAnuncios(as=>[...as,{...data,id:uid(),conta}]);showToast("Anúncio lançado!");}
     setForm(null);
   }
 
@@ -947,33 +947,33 @@ function ModalDespesa({initial,mes,onSave,onClose}) {
   );
 }
 
-function TabDespesas({despesas,setDespesas,mesSel,showToast}) {
+function TabDespesas({despesas,setDespesas,mesSel,showToast,conta="principal"}) {
   const [form,   setForm]   = useState(null);
   const [del,    setDel]    = useState(null);
   const [filtCat,setFiltCat]= useState("todos");
   const [filtRec,setFiltRec]= useState("todos");
 
   const itens = useMemo(()=>
-    despesas.filter(d=>d.mes===mesSel
+    despesas.filter(d=>d.mes===mesSel&&d.conta===conta
       &&(filtCat==="todos"||d.cat===filtCat)
       &&(filtRec==="todos"||(filtRec==="recorrente"?d.recorrente:!d.recorrente)))
       .sort((a,b)=>b.valor-a.valor)
-  ,[despesas,mesSel,filtCat,filtRec]);
+  ,[despesas,mesSel,filtCat,filtRec,conta]);
 
   const porCat = useMemo(()=>
     CATS_DESP.map(c=>{
-      const items = despesas.filter(d=>d.mes===mesSel&&d.cat===c.id);
+      const items = despesas.filter(d=>d.mes===mesSel&&d.conta===conta&&d.cat===c.id);
       return {...c,val:items.reduce((s,d)=>s+d.valor,0),count:items.length};
     }).filter(c=>c.val>0).sort((a,b)=>b.val-a.val)
-  ,[despesas,mesSel]);
+  ,[despesas,mesSel,conta]);
 
   const totalDesp = porCat.reduce((s,c)=>s+c.val,0);
-  const totalFix  = despesas.filter(d=>d.mes===mesSel&&d.recorrente).reduce((s,d)=>s+d.valor,0);
+  const totalFix  = despesas.filter(d=>d.mes===mesSel&&d.conta===conta&&d.recorrente).reduce((s,d)=>s+d.valor,0);
 
   function salvar(data) {
     if (!data.desc||!data.valor) return;
-    if (form?.id){setDespesas(ds=>ds.map(d=>d.id===form.id?{...data,id:form.id}:d));showToast("Atualizado!");}
-    else{setDespesas(ds=>[...ds,{...data,id:uid()}]);showToast("Despesa lançada!");}
+    if (form?.id){setDespesas(ds=>ds.map(d=>d.id===form.id?{...data,id:form.id,conta}:d));showToast("Atualizado!");}
+    else{setDespesas(ds=>[...ds,{...data,id:uid(),conta}]);showToast("Despesa lançada!");}
     setForm(null);
   }
 
@@ -1329,6 +1329,49 @@ function TabFechamento({receitas,anuncios,despesas,fechamentos,setFechamentos,me
   );
 }
 
+// ─── TAB TESTES CAIQUE ────────────────────────────────────────────────────────
+function TabCaique({receitas,setReceitas,anuncios,setAnuncios,despesas,setDespesas,produtos,mesSel,showToast}) {
+  const [subAba, setSubAba] = useState("dashboard");
+  const CONTA = "caique";
+
+  const SUB_TABS = [
+    {id:"dashboard", label:"📊 Dashboard"},
+    {id:"receitas",  label:"💰 Receitas"},
+    {id:"anuncios",  label:"📢 Anúncios"},
+    {id:"despesas",  label:"💸 Despesas"},
+  ];
+
+  return (
+    <div>
+      {/* Sub-header Testes Caique */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:5,
+                   padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+        <div style={{background:"#7c3aed",color:"#fff",fontSize:11,fontWeight:700,
+                     padding:"3px 10px",borderRadius:3,letterSpacing:1}}>TESTES CAIQUE</div>
+        <div style={{fontSize:11,color:C.muted}}>Contabilidade separada · consolida no dashboard geral</div>
+      </div>
+
+      {/* Sub-tabs */}
+      <div style={{display:"flex",gap:2,borderBottom:`1px solid ${C.border}`,marginBottom:16}}>
+        {SUB_TABS.map(t=>(
+          <button key={t.id} onClick={()=>setSubAba(t.id)} style={{
+            background:"none",border:"none",
+            borderBottom:`2px solid ${subAba===t.id?"#7c3aed":"transparent"}`,
+            color:subAba===t.id?C.text:C.muted,
+            padding:"8px 14px",cursor:"pointer",fontFamily:"inherit",
+            fontSize:12,fontWeight:subAba===t.id?600:400,whiteSpace:"nowrap",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {subAba==="dashboard" && <TabDashboard receitas={receitas.filter(r=>r.conta===CONTA)} anuncios={anuncios.filter(a=>a.conta===CONTA)} despesas={despesas.filter(d=>d.conta===CONTA)} produtos={produtos} fechamentos={{}} mesSel={mesSel}/>}
+      {subAba==="receitas"  && <TabReceitas  receitas={receitas} setReceitas={setReceitas} produtos={produtos} mesSel={mesSel} showToast={showToast} conta={CONTA}/>}
+      {subAba==="anuncios"  && <TabAnuncios  anuncios={anuncios} setAnuncios={setAnuncios} receitas={receitas} mesSel={mesSel} showToast={showToast} conta={CONTA}/>}
+      {subAba==="despesas"  && <TabDespesas  despesas={despesas} setDespesas={setDespesas} mesSel={mesSel} showToast={showToast} conta={CONTA}/>}
+    </div>
+  );
+}
+
 // ─── APP PRINCIPAL ────────────────────────────────────────────────────────────
 export default function App() {
   const [loaded,     setLoaded]     = useState(false);
@@ -1464,6 +1507,7 @@ export default function App() {
     {id:"despesas",  label:"💸 Despesas"},
     {id:"produtos",  label:"📦 Produtos"},
     {id:"fechamento",label:"📋 Fechamento"},
+    {id:"caique",    label:"🧪 Testes Caique", cor:"#7c3aed"},
   ];
 
   return (
@@ -1540,8 +1584,8 @@ export default function App() {
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>setAba(t.id)} style={{
             background:"none",border:"none",
-            borderBottom:`2px solid ${aba===t.id?C.accent:"transparent"}`,
-            color:aba===t.id?C.text:C.muted,
+            borderBottom:`2px solid ${aba===t.id?(t.cor||C.accent):"transparent"}`,
+            color:aba===t.id?(t.cor||C.text):C.muted,
             padding:"11px 14px",cursor:"pointer",fontFamily:"inherit",
             fontSize:12,fontWeight:aba===t.id?600:400,whiteSpace:"nowrap",
           }}>
@@ -1553,11 +1597,12 @@ export default function App() {
       {/* CONTEÚDO */}
       <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto"}}>
         {aba==="dashboard"  && <TabDashboard  receitas={receitas} anuncios={anuncios} despesas={despesas} produtos={produtos} fechamentos={fechamentos} mesSel={mesSel}/>}
-        {aba==="receitas"   && <TabReceitas   receitas={receitas} setReceitas={setReceitasSync} produtos={produtos} mesSel={mesSel} showToast={showToast}/>}
-        {aba==="anuncios"   && <TabAnuncios   anuncios={anuncios} setAnuncios={setAnunciosSync} receitas={receitas} mesSel={mesSel} showToast={showToast}/>}
-        {aba==="despesas"   && <TabDespesas   despesas={despesas} setDespesas={setDespesasSync} mesSel={mesSel} showToast={showToast}/>}
+        {aba==="receitas"   && <TabReceitas   receitas={receitas} setReceitas={setReceitasSync} produtos={produtos} mesSel={mesSel} showToast={showToast} conta="principal"/>}
+        {aba==="anuncios"   && <TabAnuncios   anuncios={anuncios} setAnuncios={setAnunciosSync} receitas={receitas} mesSel={mesSel} showToast={showToast} conta="principal"/>}
+        {aba==="despesas"   && <TabDespesas   despesas={despesas} setDespesas={setDespesasSync} mesSel={mesSel} showToast={showToast} conta="principal"/>}
         {aba==="produtos"   && <TabProdutos   produtos={produtos} setProdutos={setProdutosSync} receitas={receitas} mesSel={mesSel} showToast={showToast}/>}
         {aba==="fechamento" && <TabFechamento receitas={receitas} anuncios={anuncios} despesas={despesas} fechamentos={fechamentos} setFechamentos={setFechamentosSync} mesSel={mesSel} showToast={showToast}/>}
+        {aba==="caique"     && <TabCaique     receitas={receitas} setReceitas={setReceitasSync} anuncios={anuncios} setAnuncios={setAnunciosSync} despesas={despesas} setDespesas={setDespesasSync} produtos={produtos} mesSel={mesSel} showToast={showToast}/>}
       </div>
 
       <Toast toast={toast}/>

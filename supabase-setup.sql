@@ -21,6 +21,11 @@ create table if not exists fd_receitas (
 alter table fd_receitas add column if not exists taxa_perc numeric(6,4) default null;
 alter table fd_receitas add column if not exists taxa_fixa numeric(10,2) default null;
 
+-- Migração: campo conta para separar contabilidades
+alter table fd_receitas  add column if not exists conta text not null default 'principal';
+alter table fd_anuncios  add column if not exists conta text not null default 'principal';
+alter table fd_despesas  add column if not exists conta text not null default 'principal';
+
 -- Investimentos em anúncios
 create table if not exists fd_anuncios (
   id text primary key,
