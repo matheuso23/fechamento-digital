@@ -100,6 +100,7 @@ const CATS_DESP = [
   {id:"video",     label:"Vídeo / Streaming",    icon:"📹", cor:C.red   },
   {id:"automacao", label:"Automação",            icon:"⚙️", cor:C.orange},
   {id:"conteudo",  label:"Produção de Conteúdo", icon:"✍️", cor:C.yellow},
+  {id:"facebook_ads",label:"Facebook Ads",       icon:"📘", cor:"#1877f2"},
   {id:"afiliados", label:"Afiliados / Comissões",icon:"🤝", cor:C.accent},
   {id:"equipe",    label:"Equipe / Freelancers", icon:"👷", cor:"#94a3b8"},
   {id:"contabil",  label:"Contabilidade / Jur.", icon:"⚖️", cor:C.muted },
