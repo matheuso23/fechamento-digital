@@ -30,20 +30,25 @@ async function buscarVendas(token: string, startMs: number, endMs: number) {
   let pageToken: string | null = null;
 
   do {
+    // Hotmart exige parâmetros de status separados, não com vírgula
     const params = new URLSearchParams({
-      transaction_status: "APPROVED,COMPLETE",
-      start_date: String(startMs),
-      end_date:   String(endMs),
+      start_date:  String(startMs),
+      end_date:    String(endMs),
       max_results: "500",
     });
+    params.append("transaction_status", "APPROVED");
+    params.append("transaction_status", "COMPLETE");
     if (pageToken) params.set("page_token", pageToken);
 
     const r = await fetch(
       `https://developers.hotmart.com/payments/api/v1/sales/history?${params}`,
-      { headers: { "Authorization": `Bearer ${token}` } }
+      { headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" } }
     );
 
-    if (!r.ok) throw new Error(`API Hotmart: ${await r.text()}`);
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error(`API Hotmart (${r.status}): ${txt}`);
+    }
     const j = await r.json();
 
     const items = j.items || [];
@@ -97,6 +102,7 @@ Deno.serve(async (req) => {
         valor,
         unidades:   1,
         obs:        "Importado via API",
+        conta:      "principal",
       };
     });
 

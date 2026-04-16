@@ -446,9 +446,34 @@ function calcMes(receitas, anuncios, despesas, mes, conta=null) {
   return {recBruta,taxasPlat,recLiq,totalAds,totalDesp,lucroBruto,resultado,roas,margem,totalVendas,cpa};
 }
 
+// ─── PROJEÇÃO DO MÊS ─────────────────────────────────────────────────────────
+function calcProjecao(receitas, anuncios, despesas, mes) {
+  const hoje    = new Date();
+  const anoMes  = mes.split("-").map(Number);
+  const isMesAt = anoMes[0]===hoje.getFullYear() && anoMes[1]===(hoje.getMonth()+1);
+  if (!isMesAt) return null;
+
+  const diasNoMes  = new Date(anoMes[0], anoMes[1], 0).getDate();
+  const diaAtual   = hoje.getDate();
+  const diasPassados = diaAtual;
+  const fator      = diasNoMes / diasPassados;
+
+  const c = calcMes(receitas, anuncios, despesas, mes);
+  return {
+    recBruta:  c.recBruta  * fator,
+    totalAds:  c.totalAds  * fator,
+    totalDesp: c.totalDesp * fator,
+    resultado: (c.recBruta - c.taxasPlat - c.totalAds - c.totalDesp) * fator,
+    diasPassados,
+    diasNoMes,
+    pct: Math.round((diasPassados/diasNoMes)*100),
+  };
+}
+
 // ─── TAB DASHBOARD ────────────────────────────────────────────────────────────
 function TabDashboard({receitas,anuncios,despesas,produtos,fechamentos,mesSel}) {
   const c = calcMes(receitas,anuncios,despesas,mesSel);
+  const proj = calcProjecao(receitas, anuncios, despesas, mesSel);
   const meses6 = ultMeses(6,mesSel);
   const evolucao = meses6.map(m => {
     const mc = calcMes(receitas,anuncios,despesas,m);
@@ -495,6 +520,24 @@ function TabDashboard({receitas,anuncios,despesas,produtos,fechamentos,mesSel}) 
         <KPI label="DESPESAS"         value={fmtRk(c.totalDesp)}  color={C.yellow} topColor={C.yellow} small/>
         <KPI label="RESULTADO"        value={fmtRk(c.resultado)}  color={c.resultado>=0?C.accent:C.red} topColor={C.accent} small/>
       </div>
+      {proj && (
+        <div style={{background:C.card,border:`1px solid #7c3aed44`,borderRadius:5,padding:"14px 18px",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div>
+              <div style={{fontSize:10,color:"#a78bfa",letterSpacing:1,fontWeight:700}}>📅 PROJEÇÃO DO MÊS</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:2}}>Dia {proj.diasPassados} de {proj.diasNoMes} · {proj.pct}% do mês concluído</div>
+            </div>
+            <div style={{fontSize:10,color:C.muted}}>se o ritmo se mantiver</div>
+          </div>
+          <ProgBar pct={proj.pct} color="#7c3aed" h={4}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginTop:12}}>
+            <div><div style={{fontSize:10,color:C.muted,marginBottom:3}}>RECEITA PROJETADA</div><div style={{fontSize:16,fontWeight:700,color:C.green}}>{fmtRk(proj.recBruta)}</div><div style={{fontSize:10,color:C.muted}}>atual {fmtRk(c.recBruta)}</div></div>
+            <div><div style={{fontSize:10,color:C.muted,marginBottom:3}}>ANÚNCIOS PROJETADOS</div><div style={{fontSize:16,fontWeight:700,color:C.orange}}>{fmtRk(proj.totalAds)}</div><div style={{fontSize:10,color:C.muted}}>atual {fmtRk(c.totalAds)}</div></div>
+            <div><div style={{fontSize:10,color:C.muted,marginBottom:3}}>DESPESAS PROJETADAS</div><div style={{fontSize:16,fontWeight:700,color:C.yellow}}>{fmtRk(proj.totalDesp)}</div><div style={{fontSize:10,color:C.muted}}>atual {fmtRk(c.totalDesp)}</div></div>
+            <div><div style={{fontSize:10,color:C.muted,marginBottom:3}}>RESULTADO PROJETADO</div><div style={{fontSize:16,fontWeight:700,color:proj.resultado>=0?C.accent:C.red}}>{fmtRk(proj.resultado)}</div><div style={{fontSize:10,color:C.muted}}>atual {fmtRk(c.resultado)}</div></div>
+          </div>
+        </div>
+      )}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:5,padding:"14px 18px"}}>
           <div style={{fontSize:10,color:C.muted,letterSpacing:1,marginBottom:4}}>ROAS GLOBAL</div>
@@ -685,9 +728,10 @@ function ModalReceita({initial,produtos,mes,onSave,onClose}) {
 }
 
 function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast,conta="principal"}) {
-  const [form,    setForm]    = useState(null);
-  const [del,     setDel]     = useState(null);
-  const [filtPlat,setFiltPlat]= useState("todos");
+  const [form,      setForm]      = useState(null);
+  const [del,       setDel]       = useState(null);
+  const [filtPlat,  setFiltPlat]  = useState("todos");
+  const [importCSV, setImportCSV] = useState(false);
 
   const itens = useMemo(()=>
     receitas.filter(r=>r.mes===mesSel&&r.conta===conta&&(filtPlat==="todos"||r.plataforma===filtPlat))
@@ -751,7 +795,10 @@ function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast,conta="prin
           <option value="todos">Todas as plataformas</option>
           {PLATS_REC.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
         </FSel>
-        <Btn v="green" onClick={()=>setForm({})} sx={{marginLeft:"auto"}}>+ Nova Receita</Btn>
+        <div style={{display:"flex",gap:8,marginLeft:"auto"}}>
+          {conta==="principal"&&<Btn v="blue" onClick={()=>setImportCSV(true)}>⬆ CSV Hotmart</Btn>}
+          <Btn v="green" onClick={()=>setForm({})}>+ Nova Receita</Btn>
+        </div>
       </div>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:5,overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:"1.5fr 1.5fr 1fr 1fr 1fr 1fr auto",
@@ -799,6 +846,7 @@ function TabReceitas({receitas,setReceitas,produtos,mesSel,showToast,conta="prin
       </div>
       {form!==null && <ModalReceita initial={form?.id?form:null} produtos={produtos} mes={mesSel} onSave={salvar} onClose={()=>setForm(null)}/>}
       {del && <ConfirmDel onCancel={()=>setDel(null)} onConfirm={()=>{setReceitas(rs=>rs.filter(r=>r.id!==del));setDel(null);showToast("Removido.","yellow");}}/>}
+      {importCSV && <ModalImportCSV mes={mesSel} setReceitas={setReceitas} onClose={()=>setImportCSV(false)} showToast={showToast}/>}
     </div>
   );
 }
@@ -1194,6 +1242,229 @@ function TabProdutos({produtos,setProdutos,receitas,mesSel,showToast}) {
   );
 }
 
+// ─── IMPORTAR CSV HOTMART ─────────────────────────────────────────────────────
+function ModalImportCSV({mes, setReceitas, onClose, showToast}) {
+  const [linhas,   setLinhas]   = useState([]);
+  const [preview,  setPreview]  = useState([]);
+  const [erro,     setErro]     = useState("");
+  const [importando, setImportando] = useState(false);
+
+  // Hotmart CSV: Código da Compra, Data, Produto, Valor Bruto, Valor Líquido, Status...
+  function parseCSV(text) {
+    const rows = text.trim().split(/\r?\n/);
+    if (rows.length < 2) { setErro("Arquivo vazio ou inválido."); return; }
+
+    // Detecta separador (vírgula ou ponto-e-vírgula)
+    const sep = rows[0].includes(";") ? ";" : ",";
+    const headers = rows[0].split(sep).map(h => h.trim().toLowerCase().replace(/"/g,""));
+
+    // Mapeia colunas por nome (Hotmart pode variar o idioma)
+    const col = (names) => {
+      for (const n of names) {
+        const i = headers.findIndex(h => h.includes(n));
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+
+    const iId     = col(["código","codigo","transaction","id"]);
+    const iData   = col(["data","date"]);
+    const iProd   = col(["produto","product","nome do produto"]);
+    const iValor  = col(["líquido","liquido","net","valor líq","valor liq"]);
+    const iValorB = col(["bruto","gross","valor bru"]);
+    const iStatus = col(["status","situação","situacao"]);
+
+    const valCol  = iValor >= 0 ? iValor : iValorB;
+
+    const parsed = rows.slice(1).map(row => {
+      const cols = row.split(sep).map(c => c.trim().replace(/"/g,""));
+      const status = iStatus >= 0 ? cols[iStatus]?.toLowerCase() : "approved";
+      if (!["aprovad","approv","complet","paid"].some(s => status?.includes(s))) return null;
+
+      const rawVal = (cols[valCol] || "0").replace(/[R$\s]/g,"").replace(",",".");
+      const valor  = parseFloat(rawVal) || 0;
+      if (!valor) return null;
+
+      // Data: DD/MM/YYYY ou YYYY-MM-DD
+      let mes_rec = mes;
+      const rawData = cols[iData] || "";
+      const mDMY = rawData.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      const mYMD = rawData.match(/(\d{4})-(\d{2})-(\d{2})/);
+      if (mDMY) mes_rec = `${mDMY[3]}-${mDMY[2]}`;
+      else if (mYMD) mes_rec = `${mYMD[1]}-${mYMD[2]}`;
+
+      const id = iId >= 0 ? cols[iId] : `csv-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+      return { id: id||uid(), mes: mes_rec, plataforma:"hotmart", produto: cols[iProd]||"", valor, unidades:1, obs:"Importado via CSV", conta:"principal" };
+    }).filter(Boolean);
+
+    if (!parsed.length) { setErro("Nenhuma venda aprovada encontrada no CSV."); return; }
+    setErro("");
+    setLinhas(parsed);
+    setPreview(parsed.slice(0,5));
+  }
+
+  function onFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => parseCSV(ev.target.result);
+    reader.readAsText(file, "UTF-8");
+  }
+
+  function importar() {
+    if (!linhas.length) return;
+    setImportando(true);
+    setReceitas(rs => {
+      const existentes = new Set(rs.map(r => r.id));
+      const novas = linhas.filter(l => !existentes.has(l.id));
+      return [...rs, ...novas.map(l => ({...l, id: l.id||uid()}))];
+    });
+    showToast(`${linhas.length} venda${linhas.length!==1?"s":""} importada${linhas.length!==1?"s":""}!`);
+    setImportando(false);
+    onClose();
+  }
+
+  return (
+    <Modal title="Importar CSV da Hotmart" sub="IMPORTAÇÃO DE VENDAS" onClose={onClose}
+           onSave={linhas.length?importar:undefined} saveLabel={`Importar ${linhas.length} venda${linhas.length!==1?"s":""}`} maxW={600}>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:3,padding:14,fontSize:12}}>
+        <div style={{color:C.muted,marginBottom:8,lineHeight:1.6}}>
+          Na Hotmart: <strong>Vendas → Histórico de Vendas → Exportar CSV</strong>.<br/>
+          Filtre pelo mês desejado antes de exportar.
+        </div>
+        <input type="file" accept=".csv,.txt" onChange={onFile}
+          style={{color:C.text,fontSize:12,cursor:"pointer"}}/>
+      </div>
+      {erro && <div style={{background:C.redBg,color:C.red,border:`1px solid ${C.red}33`,padding:"8px 12px",borderRadius:3,fontSize:12}}>{erro}</div>}
+      {preview.length>0 && (
+        <div>
+          <div style={{fontSize:10,color:C.muted,letterSpacing:1,marginBottom:8}}>
+            PREVIEW — {linhas.length} venda{linhas.length!==1?"s":""} encontrada{linhas.length!==1?"s":""}
+          </div>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:3,overflow:"hidden"}}>
+            {preview.map((l,i)=>(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1.5fr 1fr",gap:8,
+                                   padding:"7px 12px",borderBottom:i<preview.length-1?`1px solid ${C.border}`:"none",fontSize:12}}>
+                <div style={{color:C.muted}}>{l.mes}</div>
+                <div style={{color:C.text}}>{l.produto||"—"}</div>
+                <div style={{color:C.green,fontWeight:700}}>{fmtR(l.valor)}</div>
+              </div>
+            ))}
+            {linhas.length>5 && (
+              <div style={{padding:"6px 12px",fontSize:11,color:C.muted,borderTop:`1px solid ${C.border}`}}>
+                + {linhas.length-5} outras...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ─── EXPORTAR RELATÓRIO ───────────────────────────────────────────────────────
+function exportarCSV(receitas, anuncios, despesas, mes, c) {
+  const sep = ";";
+  const rows = [];
+
+  rows.push(["FECHO MENSAL — DRE"]);
+  rows.push([`Mês: ${mes}`]);
+  rows.push([]);
+  rows.push(["DEMONSTRATIVO DE RESULTADO"]);
+  rows.push(["Item","Valor"]);
+  rows.push(["(+) Receita Bruta",            c.recBruta.toFixed(2)]);
+  rows.push(["(-) Taxas de Plataforma",       (-c.taxasPlat).toFixed(2)]);
+  rows.push(["(=) Receita Líquida",           c.recLiq.toFixed(2)]);
+  rows.push(["(-) Investimento em Anúncios",  (-c.totalAds).toFixed(2)]);
+  rows.push(["(=) Lucro Operacional Bruto",   c.lucroBruto.toFixed(2)]);
+  rows.push(["(-) Despesas Operacionais",     (-c.totalDesp).toFixed(2)]);
+  rows.push(["(=) Resultado Líquido",         c.resultado.toFixed(2)]);
+  rows.push(["ROAS",                          c.roas.toFixed(2)+"x"]);
+  rows.push(["Margem Líquida",                c.margem.toFixed(1)+"%"]);
+  rows.push(["Total de Vendas",               c.totalVendas]);
+  rows.push([]);
+
+  // Receitas
+  const rMes = receitas.filter(r=>r.mes===mes);
+  if (rMes.length) {
+    rows.push(["RECEITAS"]);
+    rows.push(["Plataforma","Produto","Valor Bruto","Unidades","Obs."]);
+    rMes.forEach(r=>rows.push([r.plataforma, r.produto||"", r.valor.toFixed(2), r.unidades, r.obs||""]));
+    rows.push([]);
+  }
+
+  // Anúncios
+  const aMes = anuncios.filter(a=>a.mes===mes);
+  if (aMes.length) {
+    rows.push(["ANÚNCIOS"]);
+    rows.push(["Plataforma","Campanha","Investimento","Obs."]);
+    aMes.forEach(a=>rows.push([a.plataforma, a.campanha, a.investimento.toFixed(2), a.obs||""]));
+    rows.push([]);
+  }
+
+  // Despesas
+  const dMes = expandDespesas(despesas, mes, null);
+  if (dMes.length) {
+    rows.push(["DESPESAS"]);
+    rows.push(["Categoria","Descrição","Valor","Recorrente","Obs."]);
+    dMes.forEach(d=>rows.push([d.cat, d.desc, d.valor.toFixed(2), d.recorrente?"Sim":"Não", d.obs||""]));
+  }
+
+  const csv = rows.map(r=>r.map(c=>String(c)).join(sep)).join("\n");
+  const blob = new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `fecho-mensal-${mes}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function imprimirPDF(mes, c, receitas, anuncios, despesas) {
+  const rMes = receitas.filter(r=>r.mes===mes);
+  const aMes = anuncios.filter(a=>a.mes===mes);
+  const dMes = expandDespesas(despesas, mes, null);
+
+  const fmtBRL = v => `R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2})}`;
+  const sinal  = v => v>=0 ? fmtBRL(v) : `- ${fmtBRL(Math.abs(v))}`;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Fecho Mensal — ${mes}</title>
+  <style>
+    body{font-family:Arial,sans-serif;font-size:12px;color:#111;max-width:900px;margin:0 auto;padding:24px}
+    h1{font-size:18px;margin-bottom:4px}h2{font-size:13px;margin:18px 0 8px;border-bottom:2px solid #333;padding-bottom:4px}
+    table{width:100%;border-collapse:collapse;margin-bottom:12px}
+    td,th{padding:6px 8px;text-align:left;border-bottom:1px solid #ddd}
+    th{background:#f3f3f3;font-weight:700}
+    .right{text-align:right}.bold{font-weight:700}.green{color:#166534}.red{color:#991b1b}
+    .total{background:#f9f9f9;font-weight:700}
+    @media print{button{display:none}}
+  </style></head><body>
+  <h1>FECHO MENSAL — ${mes}</h1>
+  <p style="color:#666">Gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</p>
+  <h2>DRE — Demonstrativo de Resultado</h2>
+  <table><tr><th>Item</th><th class="right">Valor</th></tr>
+  <tr><td>(+) Receita Bruta</td><td class="right green bold">${fmtBRL(c.recBruta)}</td></tr>
+  <tr><td style="padding-left:20px">(-) Taxas de Plataforma</td><td class="right red">- ${fmtBRL(c.taxasPlat)}</td></tr>
+  <tr class="total"><td>(=) Receita Líquida</td><td class="right">${fmtBRL(c.recLiq)}</td></tr>
+  <tr><td style="padding-left:20px">(-) Investimento em Anúncios</td><td class="right red">- ${fmtBRL(c.totalAds)}</td></tr>
+  <tr class="total"><td>(=) Lucro Operacional Bruto</td><td class="right">${sinal(c.lucroBruto)}</td></tr>
+  <tr><td style="padding-left:20px">(-) Despesas Operacionais</td><td class="right red">- ${fmtBRL(c.totalDesp)}</td></tr>
+  <tr class="total"><td>(=) RESULTADO LÍQUIDO</td><td class="right ${c.resultado>=0?"green":"red"} bold">${sinal(c.resultado)}</td></tr>
+  <tr><td>ROAS</td><td class="right">${c.roas.toFixed(2)}x</td></tr>
+  <tr><td>Margem Líquida</td><td class="right">${c.margem.toFixed(1)}%</td></tr>
+  <tr><td>Total de Vendas</td><td class="right">${c.totalVendas}</td></tr>
+  </table>
+  ${rMes.length?`<h2>Receitas (${rMes.length})</h2><table><tr><th>Plataforma</th><th>Produto</th><th class="right">Valor</th><th class="right">Unid.</th></tr>${rMes.map(r=>`<tr><td>${r.plataforma}</td><td>${r.produto||"—"}</td><td class="right">${fmtBRL(r.valor)}</td><td class="right">${r.unidades}</td></tr>`).join("")}</table>`:""}
+  ${aMes.length?`<h2>Anúncios (${aMes.length})</h2><table><tr><th>Plataforma</th><th>Campanha</th><th class="right">Investimento</th></tr>${aMes.map(a=>`<tr><td>${a.plataforma}</td><td>${a.campanha}</td><td class="right">${fmtBRL(a.investimento)}</td></tr>`).join("")}</table>`:""}
+  ${dMes.length?`<h2>Despesas (${dMes.length})</h2><table><tr><th>Categoria</th><th>Descrição</th><th class="right">Valor</th><th>Tipo</th></tr>${dMes.map(d=>`<tr><td>${d.cat}</td><td>${d.desc}</td><td class="right">${fmtBRL(d.valor)}</td><td>${d.recorrente?"Fixo":"Variável"}</td></tr>`).join("")}</table>`:""}
+  <script>window.onload=()=>window.print()</script></body></html>`;
+
+  const w = window.open("","_blank");
+  w.document.write(html);
+  w.document.close();
+}
+
 // ─── TAB FECHAMENTO ───────────────────────────────────────────────────────────
 function TabFechamento({receitas,anuncios,despesas,fechamentos,setFechamentos,mesSel,showToast}) {
   const c    = calcMes(receitas,anuncios,despesas,mesSel);
@@ -1242,11 +1513,17 @@ function TabFechamento({receitas,anuncios,despesas,fechamentos,setFechamentos,me
               <div style={{fontSize:13,fontWeight:700}}>DRE — Demonstrativo de Resultado</div>
               <div style={{fontSize:11,color:C.muted,marginTop:2}}>{mesLbl(mesSel).toUpperCase()}</div>
             </div>
-            <span style={{background:fechado?C.greenBg:C.yellowBg,color:fechado?C.green:C.yellow,
-                          border:`1px solid ${(fechado?C.green:C.yellow)}33`,
-                          fontSize:11,padding:"3px 10px",borderRadius:3,fontWeight:700}}>
-              {fechado?"✓ FECHADO":"● ABERTO"}
-            </span>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <Btn v="ghost" sx={{fontSize:11,padding:"4px 10px"}}
+                onClick={()=>exportarCSV(receitas,anuncios,despesas,mesSel,c)}>⬇ CSV</Btn>
+              <Btn v="blue" sx={{fontSize:11,padding:"4px 10px"}}
+                onClick={()=>imprimirPDF(mesSel,c,receitas,anuncios,despesas)}>🖨 PDF</Btn>
+              <span style={{background:fechado?C.greenBg:C.yellowBg,color:fechado?C.green:C.yellow,
+                            border:`1px solid ${(fechado?C.green:C.yellow)}33`,
+                            fontSize:11,padding:"3px 10px",borderRadius:3,fontWeight:700}}>
+                {fechado?"✓ FECHADO":"● ABERTO"}
+              </span>
+            </div>
           </div>
           <div style={{padding:"12px 18px"}}>
             {DRE_ROWS.map((row,i)=>(
