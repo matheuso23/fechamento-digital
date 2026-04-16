@@ -405,11 +405,33 @@ function TelaSetup() {
   );
 }
 
+// ─── DESPESAS EFETIVAS (inclui fixas de meses anteriores) ────────────────────
+function expandDespesas(despesas, mes, conta=null) {
+  const base = conta ? despesas.filter(d=>d.conta===conta) : despesas;
+  const reais = base.filter(d=>d.mes===mes);
+  const chavesReais = new Set(reais.map(d=>`${d.cat}|${d.desc}|${d.conta||"principal"}`));
+
+  const virtualMap = new Map();
+  base
+    .filter(d=>d.recorrente && d.mes<mes)
+    .forEach(d=>{
+      const key = `${d.cat}|${d.desc}|${d.conta||"principal"}`;
+      if (!chavesReais.has(key) && (!virtualMap.has(key) || d.mes > virtualMap.get(key).mes)) {
+        virtualMap.set(key, d);
+      }
+    });
+
+  return [
+    ...reais,
+    ...[...virtualMap.values()].map(d=>({...d, _virtual:true, _mesOrigem:d.mes, mes, id:`v-${d.id}`})),
+  ];
+}
+
 // ─── CÁLCULOS DO MÊS ─────────────────────────────────────────────────────────
 function calcMes(receitas, anuncios, despesas, mes, conta=null) {
   const rMes = receitas.filter(r=>r.mes===mes&&(conta==null||r.conta===conta));
   const aMes = anuncios.filter(a=>a.mes===mes&&(conta==null||a.conta===conta));
-  const dMes = despesas.filter(d=>d.mes===mes&&(conta==null||d.conta===conta));
+  const dMes = expandDespesas(despesas, mes, conta);
   const recBruta   = rMes.reduce((s,r)=>s+r.valor,0);
   const taxasPlat  = rMes.reduce((s,r)=>s+calcTaxa(r.valor,r.unidades,getPR(r.plataforma),r.taxaPerc,r.taxaFixa),0);
   const recLiq     = recBruta-taxasPlat;
@@ -953,27 +975,36 @@ function TabDespesas({despesas,setDespesas,mesSel,showToast,conta="principal"}) 
   const [filtCat,setFiltCat]= useState("todos");
   const [filtRec,setFiltRec]= useState("todos");
 
+  const expandidos = useMemo(()=>expandDespesas(despesas, mesSel, conta),[despesas,mesSel,conta]);
+
   const itens = useMemo(()=>
-    despesas.filter(d=>d.mes===mesSel&&d.conta===conta
-      &&(filtCat==="todos"||d.cat===filtCat)
-      &&(filtRec==="todos"||(filtRec==="recorrente"?d.recorrente:!d.recorrente)))
+    expandidos
+      .filter(d=>(filtCat==="todos"||d.cat===filtCat)
+        &&(filtRec==="todos"||(filtRec==="recorrente"?d.recorrente:!d.recorrente)))
       .sort((a,b)=>b.valor-a.valor)
-  ,[despesas,mesSel,filtCat,filtRec,conta]);
+  ,[expandidos,filtCat,filtRec]);
 
   const porCat = useMemo(()=>
     CATS_DESP.map(c=>{
-      const items = despesas.filter(d=>d.mes===mesSel&&d.conta===conta&&d.cat===c.id);
+      const items = expandidos.filter(d=>d.cat===c.id);
       return {...c,val:items.reduce((s,d)=>s+d.valor,0),count:items.length};
     }).filter(c=>c.val>0).sort((a,b)=>b.val-a.val)
-  ,[despesas,mesSel,conta]);
+  ,[expandidos]);
 
   const totalDesp = porCat.reduce((s,c)=>s+c.val,0);
-  const totalFix  = despesas.filter(d=>d.mes===mesSel&&d.conta===conta&&d.recorrente).reduce((s,d)=>s+d.valor,0);
+  const totalFix  = expandidos.filter(d=>d.recorrente).reduce((s,d)=>s+d.valor,0);
 
   function salvar(data) {
     if (!data.desc||!data.valor) return;
-    if (form?.id){setDespesas(ds=>ds.map(d=>d.id===form.id?{...data,id:form.id,conta}:d));showToast("Atualizado!");}
-    else{setDespesas(ds=>[...ds,{...data,id:uid(),conta}]);showToast("Despesa lançada!");}
+    const isVirtual = form?._virtual;
+    const dataReal  = {...data, mes:mesSel, conta, _virtual:undefined, _mesOrigem:undefined};
+    if (form?.id && !isVirtual) {
+      setDespesas(ds=>ds.map(d=>d.id===form.id?{...dataReal,id:form.id}:d));
+      showToast("Atualizado!");
+    } else {
+      setDespesas(ds=>[...ds,{...dataReal,id:uid()}]);
+      showToast(isVirtual?"Lançado para este mês!":"Despesa lançada!");
+    }
     setForm(null);
   }
 
@@ -1032,16 +1063,19 @@ function TabDespesas({despesas,setDespesas,mesSel,showToast,conta="principal"}) 
               onMouseEnter={e=>e.currentTarget.style.background=C.surface}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <div style={{color:cat.cor,fontWeight:600}}>{cat.icon} {cat.label}</div>
-              <div>{d.desc}{d.obs&&<span style={{color:C.muted,fontSize:11,marginLeft:6}}>· {d.obs}</span>}</div>
-              <div style={{fontWeight:700,color:C.yellow}}>{fmtR(d.valor)}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span>{d.desc}{d.obs&&<span style={{color:C.muted,fontSize:11,marginLeft:6}}>· {d.obs}</span>}</span>
+                {d._virtual&&<span style={{background:"#1a1a2e",color:"#818cf8",border:"1px solid #818cf833",fontSize:9,padding:"1px 5px",borderRadius:2,fontWeight:700,whiteSpace:"nowrap"}}>AUTO</span>}
+              </div>
+              <div style={{fontWeight:700,color:d._virtual?C.muted:C.yellow}}>{fmtR(d.valor)}</div>
               <span style={{background:d.recorrente?C.blueBg:C.purpleBg,color:d.recorrente?C.blue:C.purple,
                             border:`1px solid ${(d.recorrente?C.blue:C.purple)}33`,
                             fontSize:9,padding:"2px 6px",borderRadius:2,fontWeight:600,whiteSpace:"nowrap"}}>
                 {d.recorrente?"FIXO":"VARIÁVEL"}
               </span>
               <div style={{display:"flex",gap:3}}>
-                <Btn onClick={()=>setForm({...d})} sx={{padding:"2px 6px",fontSize:11}}>✎</Btn>
-                <Btn v="red" onClick={()=>setDel(d.id)} sx={{padding:"2px 6px",fontSize:11}}>✕</Btn>
+                <Btn onClick={()=>setForm({...d, mes:mesSel})} sx={{padding:"2px 6px",fontSize:11}} title={d._virtual?"Lançar neste mês":"Editar"}>✎</Btn>
+                {!d._virtual&&<Btn v="red" onClick={()=>setDel(d.id)} sx={{padding:"2px 6px",fontSize:11}}>✕</Btn>}
               </div>
             </div>
           );
